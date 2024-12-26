@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <link
+        href="data:image/x-icon;base64,AAABAAEAEBAQAAEABAAoAQAAFgAAACgAAAAQAAAAIAAAAAEABAAAAAAAgAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAApuCUAHG1WQDPsXYAjyoVALWCWQAHQAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARAAAAAAAAAREAAAAAAAARVREREREREQ1VVVVVVVVQEM0RERERERABEQAAAAAAAAARAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGYAAAAAAAAAZmAGZmZmZmZiJgYiIiIiIiIhZmZmZmZmYRYAAAAAAABmYAAAAAAAAGYADn/wAAx/8AAIAAAAAAAAAAgAAAAMf/AADn/wAA//8AAP//AAD/5wAA/+MAAAABAAAAAAAAAAEAAP/jAAD/5wAA"
+        rel="icon" type="image/x-icon">
+    <style>
+        body {
+            background-color: black;
+            color: white;
+            margin: 0;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        #main-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding-top: 20px;
+        }
+
+        .quat-container {
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(146, 140, 140, 0.2);
+            background-color: black;
+            color: white;
+            padding: 10px;
+            margin: 20px 0;
+            /* width: 90%; */
+            max-width: 600px;
+            box-sizing: border-box;
+            text-align: center;
+            display: none;
+            /* Initially hidden */
+        }
+
+        .quat-title {
+            font-size: 80px;
+            margin-bottom: 10px;
+        }
+
+        .page-title {
+            text-align: center;
+            font-size: 80px;
+            margin-bottom: 10px;
+            margin-top: 10px;
+        }
+
+        .title-line {
+            border-top: 2px dashed white;
+            margin-left: -10px;
+            margin-right: -10px;
+            margin-bottom: 10px;
+        }
+
+        .quat-value {
+            font-size: 80px;
+            white-space: nowrap;
+            margin: 10px 0;
+            color: #ccc;
+        }
+    </style>
+    <script id="MathJax-script" src="static/libs/mathjax.js"></script>
+    <script id="socketio-script" src="static/libs/socket.io.min.js"></script>
+
+    <script>
+        let geolocation_data;
+        let FRAME = "enu";
+        const SOCKET_TIMEOUT_MS = 200;
+        document.addEventListener('DOMContentLoaded', () => {
+            MathJax.startup.promise.then(() => {
+                // Show both containers after MathJax has rendered
+                document.querySelectorAll('.quat-container').forEach(container => {
+                    container.style.display = 'block';
+                });
+            });
+        });
+
+        const socket = io({ transports: ['websocket', 'polling'] });  // Ensure websocket and polling are enabled
+
+        socket.on('connect', () => {
+            console.log('Connected to server');
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+        });
+
+        // Check if Geolocation API is supported
+        if ("geolocation" in navigator) {
+            console.log("Geolocation API is supported.");
+
+            // Watch the user's position continuously
+            const watchId = navigator.geolocation.watchPosition(
+                (data) => {
+                    geolocation_data = data;
+                },
+                (error) => {
+                    console.error("Error fetching location:", error);
+                },
+                {
+                    enableHighAccuracy: true, // Use GPS if available
+                    maximumAge: 0,          // No caching of location
+                    timeout: 100000          // Timeout after 100 seconds
+                }
+            );
+
+            // Stop watching after some time (optional)
+            setTimeout(() => {
+                navigator.geolocation.clearWatch(watchId);
+                console.log("Stopped watching location.");
+            }, 60000000); // Stop after 1000 minutes
+        } else {
+            alert("Geolocation is not supported by your browser.");
+        }
+
+        // Function to sync map rotation with the compass
+        let lastUpdateTime = 0; // Timestamp for throttling updates
+        let lastBearing = null; // Store the last bearing to check for significant changes
+
+        // Event handler for device orientation
+        function handleDeviceOrientation(event) {
+            const now = Date.now();
+            if (now - lastUpdateTime < SOCKET_TIMEOUT_MS) return; // Skip if within throttle interval
+
+            let compassHeading; // Compass heading in degrees (0 to 360)
+
+            if (event.webkitCompassHeading) {
+                // You may consider adding/distracting landscape/portrait mode value here
+                compassHeading = event.webkitCompassHeading;
+                if (compassHeading < 0) { compassHeading += 360; }
+                if (compassHeading > 360) { compassHeading -= 360; }
+            } else {
+                alert("Inertial orientation sensing not available!")
+            }
+            lastUpdateTime = now; // Update timestamp
+
+            socket.emit("orientation_update", { alpha_deg: compassHeading, beta_deg: event.beta, gamma_deg: event.gamma, frame: FRAME });
+
+        }
+
+        function enableOrientationTracking() {
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                // iOS and some modern browsers
+                DeviceOrientationEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            window.addEventListener('deviceorientation', handleDeviceOrientation);
+                        } else {
+                            alert('Permission denied for device orientation.');
+                        }
+                    })
+                    .catch(error => console.error('Error requesting orientation permission:', error));
+            } else {
+                // For browsers that don't require explicit permission
+                window.addEventListener('deviceorientation', handleDeviceOrientation);
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            const touchArea = document.getElementById("main-container");
+            touchArea.addEventListener("click", enableOrientationTracking); // "click" is guaranteed to work as a user gesture
+        });
+
+        window.setInterval(() => {
+            socket.emit("position_update", { latitude_deg: geolocation_data.coords.latitude, longitude_deg: geolocation_data.coords.longitude, frame: FRAME });
+            socket.emit("time_update", { unix_time: Date.now() });
+        }, SOCKET_TIMEOUT_MS);  // You may need to adjust the interval timing
+
+        socket.on("position_ack", (data) => {
+            if (data.error) {
+                console.error("Error:", data.error);
+            } else {
+                document.getElementById('r1').innerHTML = (Math.round(data.r.x * 1000) / 1000).toFixed(3)
+                document.getElementById('r2').innerHTML = (Math.round(data.r.y * 1000) / 1000).toFixed(3)
+                document.getElementById('r3').innerHTML = (Math.round(data.r.z * 1000) / 1000).toFixed(3)
+            }
+        });
+
+        socket.on("orientation_ack", (data) => {
+            if (data.error) {
+                console.error("Error:", data.error);
+            } else {
+                document.getElementById('q1').innerHTML = (Math.round(data.q.x * 10000) / 10000).toFixed(4)
+                document.getElementById('q2').innerHTML = (Math.round(data.q.y * 10000) / 10000).toFixed(4)
+                document.getElementById('q3').innerHTML = (Math.round(data.q.z * 10000) / 10000).toFixed(4)
+                document.getElementById('q4').innerHTML = (Math.round(data.q.w * 10000) / 10000).toFixed(4)
+            }
+        });
+    </script>
+</head>
+
+<body>
+    <div>
+        <div class="page-title">J2000</div>
+        <div class="title-line"></div>
+    </div>
+    <div id="main-container">
+        <!-- First Box -->
+        <div class="quat-container">
+            <div class="quat-title">Orientation</div>
+            <div class="title-line"></div>
+            <div class="quat-value" id="q1">
+                \(q_1=\) 0.0000\(\hat{\mathbf{x}}\)
+            </div>
+            <div class="quat-value" id="q2">
+                \(q_2=\) 0.0000\(\hat{\mathbf{y}}\)
+            </div>
+            <div class="quat-value" id="q3">
+                \(q_3=\) 0.0000\(\hat{\mathbf{z}}\)
+            </div>
+            <div class="quat-value" id="q4">
+                \(q_4=\) 1.0000\(\hspace{0.45em}\)
+            </div>
+        </div>
+
+        <!-- Second Box -->
+        <div class="quat-container">
+            <div class="quat-title">Position (km)</div>
+            <div class="title-line"></div>
+            <div class="quat-value" id="r1">
+                0000.000\(\hat{\mathbf{x}}\)
+            </div>
+            <div class="quat-value" id="r2">
+                0000.000\(\hat{\mathbf{y}}\)
+            </div>
+            <div class="quat-value" id="r3">
+                0000.000\(\hat{\mathbf{z}}\)
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
