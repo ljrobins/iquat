@@ -69,7 +69,7 @@
     <script>
         let geolocation_data;
         let FRAME = "enu";
-        const SOCKET_TIMEOUT_MS = 200;
+        const SOCKET_TIMEOUT_MS = 100;
         document.addEventListener('DOMContentLoaded', () => {
             MathJax.startup.promise.then(() => {
                 // Show both containers after MathJax has rendered
@@ -121,26 +121,36 @@
         let lastUpdateTime = 0; // Timestamp for throttling updates
         let lastBearing = null; // Store the last bearing to check for significant changes
 
-        // Event handler for device orientation
+        let initialCompassHeading = null;
+
+        window.addEventListener('focus', () => {
+            initialCompassHeading = null;
+        });
+
         function handleDeviceOrientation(event) {
             const now = Date.now();
-            if (now - lastUpdateTime < SOCKET_TIMEOUT_MS) return; // Skip if within throttle interval
+            if (now - lastUpdateTime < SOCKET_TIMEOUT_MS) return;
+            lastUpdateTime = now;
 
-            let compassHeading; // Compass heading in degrees (0 to 360)
-
+            let compassHeading;
             if (event.webkitCompassHeading) {
-                // You may consider adding/distracting landscape/portrait mode value here
                 compassHeading = event.webkitCompassHeading;
-                if (compassHeading < 0) { compassHeading += 360; }
-                if (compassHeading > 360) { compassHeading -= 360; }
             } else {
-                alert("Inertial orientation sensing not available!")
+                alert("Compass heading data not available!")
             }
-            lastUpdateTime = now; // Update timestamp
 
-            socket.emit("orientation_update", { alpha_deg: compassHeading, beta_deg: event.beta, gamma_deg: event.gamma, frame: FRAME });
-
+            socket.emit("orientation_update", {
+                alpha_deg: event.alpha,
+                beta_deg: event.beta,
+                gamma_deg: event.gamma,
+                compass_heading: compassHeading,
+                frame: FRAME,
+            });
         }
+
+        window.addEventListener('focus', () => {
+            initialCompassHeading = null;
+        });
 
         function enableOrientationTracking() {
             if (typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -204,16 +214,12 @@
             <div class="quat-title">Orientation</div>
             <div class="title-line"></div>
             <div class="quat-value" id="q1">
-                \(q_1=\) 0.0000\(\hat{\mathbf{x}}\)
             </div>
             <div class="quat-value" id="q2">
-                \(q_2=\) 0.0000\(\hat{\mathbf{y}}\)
             </div>
             <div class="quat-value" id="q3">
-                \(q_3=\) 0.0000\(\hat{\mathbf{z}}\)
             </div>
             <div class="quat-value" id="q4">
-                \(q_4=\) 1.0000\(\hspace{0.45em}\)
             </div>
         </div>
 
@@ -222,13 +228,10 @@
             <div class="quat-title">Position (km)</div>
             <div class="title-line"></div>
             <div class="quat-value" id="r1">
-                0000.000\(\hat{\mathbf{x}}\)
             </div>
             <div class="quat-value" id="r2">
-                0000.000\(\hat{\mathbf{y}}\)
             </div>
             <div class="quat-value" id="r3">
-                0000.000\(\hat{\mathbf{z}}\)
             </div>
         </div>
     </div>
