@@ -122,6 +122,13 @@ while True:
     dcm = mr.quat_to_dcm(quat)
     body_y_in_inertial = dcm[1,:]
 
+    print(body_y_in_inertial)
+
+    # for az/el:
+    # print(np.rad2deg(np.arctan2(body_y_in_inertial[2], np.linalg.norm(body_y_in_inertial[:2]))))
+    # print(np.rad2deg(mr.wrap_to_two_pi(np.arctan2(body_y_in_inertial[1], body_y_in_inertial[0]))))
+
+    # For ra/dec
     print(np.rad2deg(np.arctan2(body_y_in_inertial[2], np.linalg.norm(body_y_in_inertial[:2]))))
     print(np.rad2deg(mr.wrap_to_two_pi(np.arctan2(body_y_in_inertial[1], body_y_in_inertial[0]))))
 

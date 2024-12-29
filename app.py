@@ -144,8 +144,8 @@ def handle_orientation_update(data):
         f"{alpha:10.3f}, {beta:10.3f}, {gamma:10.3f}, {compass_heading:10.3f}, {compass_adjustment:10.3f}"
     )
 
-    c_enu_to_itrf = mr.enu_to_ecef(station.itrf)
-    c_j2000_to_itrf = mr.itrf_to_j2000(mr.now())
+    c_enu_to_itrf = mr.enu_to_ecef(station.itrf).T
+    c_itrf_to_j2000 = mr.itrf_to_j2000(mr.now()).T
 
     if frame == "enu":
         q = mr.dcm_to_quat(c_p_to_enu).flatten()  # takes vectors from p to enu
@@ -153,7 +153,7 @@ def handle_orientation_update(data):
         q = mr.dcm_to_quat(c_p_to_enu @ c_enu_to_itrf).flatten()
     elif frame == "j2000":
         c = (
-            c_p_to_enu @ c_enu_to_itrf @ c_j2000_to_itrf
+            c_p_to_enu @ c_enu_to_itrf @ c_itrf_to_j2000
         )  # takes vectors from p to j2000
         q = mr.dcm_to_quat(c).flatten()
     else:

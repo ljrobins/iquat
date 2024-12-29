@@ -68,9 +68,10 @@
 
     <script>
         let geolocation_data;
-        let FRAME = "itrf";
+        let FRAME = "j2000";
         const SOCKET_TIMEOUT_MS = 100;
         document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('page-title').innerText = FRAME
             MathJax.startup.promise.then(() => {
                 // Show both containers after MathJax has rendered
                 document.querySelectorAll('.quat-container').forEach(container => {
@@ -205,7 +206,7 @@
 
 <body>
     <div>
-        <div class="page-title">J2000</div>
+        <div class="page-title" id="page-title"></div>
         <div class="title-line"></div>
     </div>
     <div id="main-container">
