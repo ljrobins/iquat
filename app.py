@@ -63,7 +63,7 @@ def handle_position_update(data):
         emit("position_ack", {"error": "Invalid position data"})
 
 
-def get_north_angle(c_p_to_enu):
+def get_north_angle(c_p_to_enu, gamma):
     """
     Measures the angular difference between the phone's Y/Z plane
     and the North/Up (horizontal) plane in the ENU frame.
@@ -96,17 +96,20 @@ def get_north_angle(c_p_to_enu):
 
     z_elev = np.arctan2(phone_z_enu[2], np.linalg.norm(phone_z_enu[:2])) # same for z...
 
-    rot_axis = mr.hat(np.cross(phone_z_enu, up_in_enu))
-    rv = (np.pi/2-z_elev) * rot_axis
+    if z_elev > -np.pi/4:
+        rot_axis = mr.hat(np.cross(phone_z_enu, up_in_enu))
+        rv = (np.pi/2-z_elev) * rot_axis
+    else:
+        rot_axis = -mr.hat(np.cross(phone_z_enu, up_in_enu))
+        rv = (np.pi/2+z_elev) * rot_axis
+
     c_p_to_enu_flat = c_p_to_enu @ mr.rv_to_dcm(rv)
 
     phone_x_enu_flat = c_p_to_enu_flat.T @ np.array([1, 0, 0])
-
     angle = ang(east_in_enu, phone_x_enu_flat)
 
     if z_elev < -np.pi/4:
-        angle += 180
-        # raise UserWarning("Keep the phone oriented with the screen facing upwards for accurate compass readings")
+        angle += np.pi
 
     return np.rad2deg(angle)
 
@@ -134,7 +137,7 @@ def handle_orientation_update(data):
         @ mr.r3(np.deg2rad(alpha))
     )
 
-    compass_adjustment = mr.wrap_to_360(compass_heading + get_north_angle(c_p_to_enu))
+    compass_adjustment = mr.wrap_to_360(compass_heading + get_north_angle(c_p_to_enu, gamma))
     c_p_to_enu = c_p_to_enu @ mr.r3(np.deg2rad(-compass_adjustment)-md_rad)
 
     print(
@@ -146,25 +149,21 @@ def handle_orientation_update(data):
 
     if frame == "enu":
         q = mr.dcm_to_quat(c_p_to_enu).flatten()  # takes vectors from p to enu
-        # q[:3] = mr.quat_to_rv(q)
-        # q[3] = mr.vecnorm(q[:3]).squeeze()
-        # q[:3] /= q[3]
     elif frame == "itrf":
-        q = mr.dcm_to_quat(c_enu_in_itrf @ c_p_to_enu).flatten()
+        q = mr.dcm_to_quat(c_p_to_enu @ c_enu_to_itrf).flatten()
     elif frame == "j2000":
         c = (
-            c_j2000_to_itrf @ c_enu_to_itrf @ c_p_to_enu
+            c_p_to_enu @ c_enu_to_itrf @ c_j2000_to_itrf
         )  # takes vectors from p to j2000
         q = mr.dcm_to_quat(c).flatten()
-        q[:3] = c.T @ np.array([0.0, 1.0, 0.0])
-        q[3] = 0.0
     else:
         raise ValueError(f"Unknown frame name: {frame}, should be enu, itrf, or j2000")
 
 
-    with open(f"{frame}.quat", "w") as f:
+    with open(f"data.quat", "w") as f:
         # f.writelines([f"{x}\n" for x in [alpha, beta, gamma, compass_heading]])
         f.writelines([f"{x}\n" for x in q])
+        f.writelines([f'{x}\n' for x in [alpha, beta, gamma, compass_heading]])
 
     if alpha and beta and gamma:
         # Emit an acknowledgment (optional)

@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def get_north_angle(c_p_to_enu):
+def get_north_angle(c_p_to_enu, gamma_deg):
     """
     Measures the angular difference between the phone's Y/Z plane
     and the North/Up (horizontal) plane in the ENU frame.
@@ -49,8 +49,13 @@ def get_north_angle(c_p_to_enu):
     y_elev = np.arctan2(phone_y_enu[2], np.linalg.norm(phone_y_enu[:2])) # same for y...
     z_elev = np.arctan2(phone_z_enu[2], np.linalg.norm(phone_z_enu[:2])) # same for z...
 
-    rot_axis = mr.hat(np.cross(phone_z_enu, up_in_enu))
-    rv = (np.pi/2-z_elev) * rot_axis
+    if z_elev > -np.pi/4:
+        rot_axis = mr.hat(np.cross(phone_z_enu, up_in_enu))
+        rv = (np.pi/2-z_elev) * rot_axis
+    else:
+        rot_axis = -mr.hat(np.cross(phone_z_enu, up_in_enu))
+        rv = (np.pi/2+z_elev) * rot_axis
+
     c_p_to_enu_flat = c_p_to_enu @ mr.rv_to_dcm(rv)
 
     phone_x_enu_flat = c_p_to_enu_flat.T @ np.array([1, 0, 0])
@@ -61,8 +66,8 @@ def get_north_angle(c_p_to_enu):
 
     angle = ang(east_in_enu, phone_x_enu_flat)
 
-    # if z_elev < -np.pi/4:
-    #     raise UserWarning("Keep the phone oriented with the screen facing upwards for accurate compass readings")
+    if z_elev < -np.pi/4:
+        angle += np.pi
 
     return np.rad2deg(angle)
 
@@ -88,33 +93,40 @@ inputs = []
 outputs = []
 
 while True:
-    quat = np.loadtxt("enu.quat")
-    if not (len(quat) == 4):
+    data = np.loadtxt("data.quat")
+    if not (len(data) == 8):
         continue
-    # alpha, beta, gamma, compass_heading = quat
 
-    # c_p_to_enu = (
-    #     mr.r2(np.deg2rad(gamma))
-    #     @ mr.r1(np.deg2rad(beta))
-    #     @ mr.r3(np.deg2rad(alpha))
-    # )
+    alpha, beta, gamma, compass_heading = data[4:]
+    quat = data[:4]
 
-    # inputs.append(mr.wrap_to_180(compass_heading))
-    # outputs.append(mr.wrap_to_180(get_north_angle(c_p_to_enu)))
+    c_p_to_enu = (
+        mr.r2(np.deg2rad(gamma))
+        @ mr.r1(np.deg2rad(beta))
+        @ mr.r3(np.deg2rad(alpha))
+    )
+    
+    n = get_north_angle(c_p_to_enu, gamma)
+    inputs.append(mr.wrap_to_180(compass_heading))
+    outputs.append(mr.wrap_to_180(n))
 
-    # compass_adjustment = mr.wrap_to_360(compass_heading + get_north_angle(c_p_to_enu))
-    # c_p_to_enu = c_p_to_enu @ mr.r3(np.deg2rad(-compass_adjustment))
+    compass_adjustment = mr.wrap_to_360(compass_heading + n)
+    c_p_to_enu = c_p_to_enu @ mr.r3(np.deg2rad(-compass_adjustment))
 
-    # print(
-    #     f"{compass_heading:6.3f}, {get_north_angle(c_p_to_enu):6.3f} {compass_adjustment:6.3f}"
-    # )
+    print(
+        f"{compass_heading:6.3f}, {n:6.3f} {compass_adjustment:6.3f}"
+    )
 
     # quat = mr.dcm_to_quat(c_p_to_enu)
+
+    dcm = mr.quat_to_dcm(quat)
+    body_y_in_inertial = dcm[1,:]
+
+    print(np.rad2deg(np.arctan2(body_y_in_inertial[2], np.linalg.norm(body_y_in_inertial[:2]))))
+    print(np.rad2deg(mr.wrap_to_two_pi(np.arctan2(body_y_in_inertial[1], body_y_in_inertial[0]))))
+
+
     obj.rotate_by_quat(quat)
     pl.update()
     obj._mesh.copy_from(o_obj)
     time.sleep(0.1)
-# except KeyboardInterrupt as e:
-#     pl.close()
-#     plt.scatter(inputs, outputs)
-#     plt.show()
